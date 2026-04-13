@@ -10,28 +10,17 @@ class SavedNewsScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('सेव की गई ख़बरें'),
+        title: const Text('Saved News'),
       ),
       body: Consumer<NewsProvider>(
         builder: (context, provider, child) {
           if (provider.savedArticles.isEmpty) {
             return const Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(Icons.bookmark_border, size: 64, color: Colors.grey),
-                  SizedBox(height: 16),
-                  Text(
-                    'कोई ख़बर सेव नहीं की गई है',
-                    style: TextStyle(fontSize: 18, color: Colors.grey),
-                  ),
-                ],
-              ),
+              child: Text('No saved articles yet.'),
             );
           }
 
           return ListView.builder(
-            padding: const EdgeInsets.all(8.0),
             itemCount: provider.savedArticles.length,
             itemBuilder: (context, index) {
               return NewsCard(article: provider.savedArticles[index]);

@@ -17,7 +17,7 @@ class NewsArticle {
     required this.category,
     required this.source,
     this.articleUrl,
-    required this.isBreaking,
+    this.isBreaking = false,
     required this.createdAt,
   });
 

@@ -4,8 +4,10 @@ import '../core/constants.dart';
 import '../providers/news_provider.dart';
 import '../widgets/news_card.dart';
 import '../widgets/breaking_news_banner.dart';
-import 'search_screen.dart';
+import '../widgets/ad_banner_widget.dart';
 import 'saved_news_screen.dart';
+import 'admin_screen.dart';
+import 'search_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -23,18 +25,23 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     super.initState();
     _tabController = TabController(length: AppConstants.categories.length, vsync: this);
     _tabController.addListener(_handleTabSelection);
-    _scrollController.addListener(_onScroll);
+    
+    _scrollController.addListener(() {
+      if (_scrollController.position.pixels == _scrollController.position.maxScrollExtent) {
+        context.read<NewsProvider>().fetchArticles();
+      }
+    });
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final provider = context.read<NewsProvider>();
+      provider.fetchBreakingNews();
+      provider.setCategory(AppConstants.categories[0]);
+    });
   }
 
   void _handleTabSelection() {
     if (_tabController.indexIsChanging) {
       context.read<NewsProvider>().setCategory(AppConstants.categories[_tabController.index]);
-    }
-  }
-
-  void _onScroll() {
-    if (_scrollController.position.pixels >= _scrollController.position.maxScrollExtent - 200) {
-      context.read<NewsProvider>().fetchNews();
     }
   }
 
@@ -49,9 +56,14 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text(
-          AppConstants.appName,
-          style: TextStyle(fontWeight: FontWeight.bold),
+        title: GestureDetector(
+          onLongPress: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (context) => const AdminScreen()),
+            );
+          },
+          child: const Text('Dholpur News Live', style: TextStyle(fontWeight: FontWeight.bold)),
         ),
         actions: [
           IconButton(
@@ -80,46 +92,53 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
           tabs: AppConstants.categories.map((category) => Tab(text: category)).toList(),
         ),
       ),
-      body: Consumer<NewsProvider>(
-        builder: (context, provider, child) {
-          if (provider.isLoading && provider.articles.isEmpty) {
-            return const Center(child: CircularProgressIndicator());
-          }
-
-          return RefreshIndicator(
-            onRefresh: () => provider.fetchNews(refresh: true),
-            child: CustomScrollView(
-              controller: _scrollController,
-              slivers: [
-                if (provider.breakingNews.isNotEmpty)
-                  SliverToBoxAdapter(
-                    child: BreakingNewsBanner(articles: provider.breakingNews),
-                  ),
-                SliverPadding(
-                  padding: const EdgeInsets.all(8.0),
-                  sliver: SliverList(
-                    delegate: SliverChildBuilderDelegate(
-                      (context, index) {
-                        if (index == provider.articles.length) {
-                          return provider.hasMore
-                              ? const Center(
-                                  child: Padding(
-                                    padding: EdgeInsets.all(16.0),
-                                    child: CircularProgressIndicator(),
-                                  ),
-                                )
-                              : const SizedBox.shrink();
-                        }
-                        return NewsCard(article: provider.articles[index]);
-                      },
-                      childCount: provider.articles.length + (provider.hasMore ? 1 : 0),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          );
+      body: RefreshIndicator(
+        onRefresh: () async {
+          await context.read<NewsProvider>().fetchArticles(refresh: true);
         },
+        child: CustomScrollView(
+          controller: _scrollController,
+          slivers: [
+            const SliverToBoxAdapter(
+              child: BreakingNewsBanner(),
+            ),
+            const SliverToBoxAdapter(
+              child: AdBannerWidget(),
+            ),
+            Consumer<NewsProvider>(
+              builder: (context, provider, child) {
+                if (provider.articles.isEmpty && provider.isLoading) {
+                  return const SliverFillRemaining(
+                    child: Center(child: CircularProgressIndicator()),
+                  );
+                }
+                
+                if (provider.articles.isEmpty) {
+                  return const SliverFillRemaining(
+                    child: Center(child: Text('कोई ख़बर नहीं मिली')),
+                  );
+                }
+
+                return SliverList(
+                  delegate: SliverChildBuilderDelegate(
+                    (context, index) {
+                      if (index == provider.articles.length) {
+                        return provider.hasMore
+                            ? const Padding(
+                                padding: EdgeInsets.all(16.0),
+                                child: Center(child: CircularProgressIndicator()),
+                              )
+                            : const SizedBox.shrink();
+                      }
+                      return NewsCard(article: provider.articles[index]);
+                    },
+                    childCount: provider.articles.length + (provider.hasMore ? 1 : 0),
+                  ),
+                );
+              },
+            ),
+          ],
+        ),
       ),
     );
   }

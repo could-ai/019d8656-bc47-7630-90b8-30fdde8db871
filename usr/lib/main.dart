@@ -1,18 +1,20 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:google_mobile_ads/google_mobile_ads.dart';
 import 'core/theme.dart';
 import 'core/constants.dart';
+import 'integrations/supabase.dart';
 import 'providers/news_provider.dart';
 import 'screens/splash_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   
-  await Supabase.initialize(
-    url: const String.fromEnvironment('SUPABASE_URL', defaultValue: 'https://fleayhzfranxfydyelzn.supabase.co'),
-    anonKey: const String.fromEnvironment('SUPABASE_ANON_KEY', defaultValue: 'YOUR_ANON_KEY_HERE'),
-  );
+  // Initialize Supabase
+  await SupabaseConfig.ensureInitialized();
+  
+  // Initialize AdMob
+  await MobileAds.instance.initialize();
 
   runApp(const DholpurNewsApp());
 }

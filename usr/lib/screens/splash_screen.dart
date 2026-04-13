@@ -50,7 +50,7 @@ class _SplashScreenState extends State<SplashScreen> {
             Text(
               'ताज़ा ख़बरें, सबसे पहले',
               style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    color: AppColors.white.withOpacity(0.9),
+                    color: AppColors.white,
                   ),
             ),
           ],

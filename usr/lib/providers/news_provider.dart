@@ -1,89 +1,78 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import '../models/news_article.dart';
-import '../services/supabase_service.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import 'dart:convert';
+import '../integrations/supabase.dart';
 
 class NewsProvider with ChangeNotifier {
-  final SupabaseService _supabaseService = SupabaseService();
-  
   List<NewsArticle> _articles = [];
   List<NewsArticle> _breakingNews = [];
   List<NewsArticle> _savedArticles = [];
   
   bool _isLoading = false;
-  bool _isLoadingMore = false;
-  String _currentCategory = 'Local';
-  int _offset = 0;
-  final int _limit = 20;
   bool _hasMore = true;
+  String _currentCategory = 'Local';
+  String _searchQuery = '';
+  
+  static const int _pageSize = 10;
 
   List<NewsArticle> get articles => _articles;
   List<NewsArticle> get breakingNews => _breakingNews;
   List<NewsArticle> get savedArticles => _savedArticles;
   bool get isLoading => _isLoading;
-  bool get isLoadingMore => _isLoadingMore;
-  String get currentCategory => _currentCategory;
   bool get hasMore => _hasMore;
+  String get currentCategory => _currentCategory;
 
-  NewsProvider() {
-    _loadSavedArticles();
-    fetchInitialData();
-  }
-
-  Future<void> fetchInitialData() async {
-    _isLoading = true;
-    notifyListeners();
-
+  Future<void> fetchBreakingNews() async {
     try {
-      await Future.wait([
-        _fetchBreakingNews(),
-        fetchNews(refresh: true),
-      ]);
-    } catch (e) {
-      debugPrint('Error fetching initial data: $e');
-    } finally {
-      _isLoading = false;
+      final response = await SupabaseConfig.client
+          .from('news_articles')
+          .select()
+          .eq('is_breaking', true)
+          .order('created_at', ascending: false)
+          .limit(5);
+          
+      _breakingNews = (response as List).map((json) => NewsArticle.fromJson(json)).toList();
       notifyListeners();
-    }
-  }
-
-  Future<void> _fetchBreakingNews() async {
-    try {
-      _breakingNews = await _supabaseService.getBreakingNews();
     } catch (e) {
       debugPrint('Error fetching breaking news: $e');
     }
   }
 
-  Future<void> fetchNews({bool refresh = false}) async {
+  Future<void> fetchArticles({bool refresh = false}) async {
+    if (_isLoading) return;
     if (refresh) {
-      _offset = 0;
-      _hasMore = true;
       _articles.clear();
-    } else {
-      if (!_hasMore || _isLoadingMore) return;
-      _isLoadingMore = true;
-      notifyListeners();
+      _hasMore = true;
     }
+    if (!_hasMore) return;
+
+    _isLoading = true;
+    notifyListeners();
 
     try {
-      final newArticles = await _supabaseService.getNews(
-        category: _currentCategory,
-        limit: _limit,
-        offset: _offset,
-      );
+      var query = SupabaseConfig.client
+          .from('news_articles')
+          .select()
+          .order('created_at', ascending: false)
+          .range(_articles.length, _articles.length + _pageSize - 1);
 
-      if (newArticles.length < _limit) {
+      if (_searchQuery.isNotEmpty) {
+        query = query.ilike('title', '%$_searchQuery%');
+      } else if (_currentCategory != 'All') {
+        query = query.eq('category', _currentCategory);
+      }
+
+      final response = await query;
+      final newArticles = (response as List).map((json) => NewsArticle.fromJson(json)).toList();
+
+      if (newArticles.length < _pageSize) {
         _hasMore = false;
       }
 
       _articles.addAll(newArticles);
-      _offset += newArticles.length;
     } catch (e) {
-      debugPrint('Error fetching news: $e');
+      debugPrint('Error fetching articles: $e');
     } finally {
-      _isLoadingMore = false;
+      _isLoading = false;
       notifyListeners();
     }
   }
@@ -91,45 +80,24 @@ class NewsProvider with ChangeNotifier {
   void setCategory(String category) {
     if (_currentCategory != category) {
       _currentCategory = category;
-      fetchNews(refresh: true);
+      _searchQuery = '';
+      fetchArticles(refresh: true);
     }
   }
 
-  Future<List<NewsArticle>> searchNews(String query) async {
-    try {
-      return await _supabaseService.searchNews(query);
-    } catch (e) {
-      debugPrint('Error searching news: $e');
-      return [];
-    }
+  void searchNews(String query) {
+    _searchQuery = query;
+    fetchArticles(refresh: true);
   }
 
-  // Saved Articles Logic
-  Future<void> _loadSavedArticles() async {
-    final prefs = await SharedPreferences.getInstance();
-    final savedData = prefs.getStringList('saved_articles') ?? [];
-    _savedArticles = savedData
-        .map((jsonStr) => NewsArticle.fromJson(jsonDecode(jsonStr)))
-        .toList();
-    notifyListeners();
-  }
-
-  Future<void> toggleSaveArticle(NewsArticle article) async {
-    final isSaved = isArticleSaved(article.id);
-    
-    if (isSaved) {
-      _savedArticles.removeWhere((a) => a.id == article.id);
+  void toggleSaveArticle(NewsArticle article) {
+    final index = _savedArticles.indexWhere((a) => a.id == article.id);
+    if (index >= 0) {
+      _savedArticles.removeAt(index);
     } else {
       _savedArticles.add(article);
     }
-    
     notifyListeners();
-    
-    final prefs = await SharedPreferences.getInstance();
-    final savedData = _savedArticles
-        .map((a) => jsonEncode(a.toJson()))
-        .toList();
-    await prefs.setStringList('saved_articles', savedData);
   }
 
   bool isArticleSaved(String id) {

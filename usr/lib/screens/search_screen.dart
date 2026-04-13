@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
-import '../providers/news_provider.dart';
+import '../models/news_article.dart';
 import '../widgets/news_card.dart';
+import '../integrations/supabase.dart';
 
 class SearchScreen extends StatefulWidget {
   const SearchScreen({super.key});
@@ -12,18 +12,50 @@ class SearchScreen extends StatefulWidget {
 
 class _SearchScreenState extends State<SearchScreen> {
   final TextEditingController _searchController = TextEditingController();
+  List<NewsArticle> _searchResults = [];
+  bool _isLoading = false;
+  String _error = '';
+
+  void _performSearch(String query) async {
+    if (query.trim().isEmpty) {
+      setState(() {
+        _searchResults = [];
+        _error = '';
+      });
+      return;
+    }
+
+    setState(() {
+      _isLoading = true;
+      _error = '';
+    });
+
+    try {
+      final response = await SupabaseConfig.client
+          .from('news_articles')
+          .select()
+          .ilike('title', '%$query%')
+          .order('created_at', ascending: false)
+          .limit(20);
+
+      setState(() {
+        _searchResults = (response as List)
+            .map((json) => NewsArticle.fromJson(json))
+            .toList();
+        _isLoading = false;
+      });
+    } catch (e) {
+      setState(() {
+        _error = 'Failed to search news. Please try again.';
+        _isLoading = false;
+      });
+    }
+  }
 
   @override
   void dispose() {
     _searchController.dispose();
     super.dispose();
-  }
-
-  void _performSearch() {
-    final query = _searchController.text.trim();
-    if (query.isNotEmpty) {
-      context.read<NewsProvider>().searchNews(query);
-    }
   }
 
   @override
@@ -34,48 +66,59 @@ class _SearchScreenState extends State<SearchScreen> {
           controller: _searchController,
           autofocus: true,
           decoration: const InputDecoration(
-            hintText: 'ख़बरें खोजें...',
+            hintText: 'Search news...',
             border: InputBorder.none,
             hintStyle: TextStyle(color: Colors.white70),
           ),
           style: const TextStyle(color: Colors.white),
+          onSubmitted: _performSearch,
           textInputAction: TextInputAction.search,
-          onSubmitted: (_) => _performSearch(),
         ),
         actions: [
           IconButton(
-            icon: const Icon(Icons.search),
-            onPressed: _performSearch,
+            icon: const Icon(Icons.clear),
+            onPressed: () {
+              _searchController.clear();
+              _performSearch('');
+            },
           ),
         ],
       ),
-      body: Consumer<NewsProvider>(
-        builder: (context, provider, child) {
-          if (provider.isLoading) {
-            return const Center(child: CircularProgressIndicator());
-          }
+      body: _buildBody(),
+    );
+  }
 
-          if (provider.searchResults.isEmpty && _searchController.text.isNotEmpty) {
-            return const Center(
-              child: Text('कोई परिणाम नहीं मिला'),
-            );
-          }
+  Widget _buildBody() {
+    if (_isLoading) {
+      return const Center(child: CircularProgressIndicator());
+    }
 
-          if (provider.searchResults.isEmpty) {
-            return const Center(
-              child: Text('खोजने के लिए कुछ टाइप करें'),
-            );
-          }
+    if (_error.isNotEmpty) {
+      return Center(
+        child: Text(
+          _error,
+          style: const TextStyle(color: Colors.red),
+        ),
+      );
+    }
 
-          return ListView.builder(
-            padding: const EdgeInsets.all(8.0),
-            itemCount: provider.searchResults.length,
-            itemBuilder: (context, index) {
-              return NewsCard(article: provider.searchResults[index]);
-            },
-          );
-        },
-      ),
+    if (_searchResults.isEmpty && _searchController.text.isNotEmpty) {
+      return const Center(
+        child: Text('No results found.'),
+      );
+    }
+
+    if (_searchResults.isEmpty) {
+      return const Center(
+        child: Text('Type to search for news.'),
+      );
+    }
+
+    return ListView.builder(
+      itemCount: _searchResults.length,
+      itemBuilder: (context, index) {
+        return NewsCard(article: _searchResults[index]);
+      },
     );
   }
 }
